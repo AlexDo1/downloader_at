@@ -16,8 +16,9 @@ RESOURCE_PREFIX = "resources/nwp-v1-1h-2500m/filelisting/"
 LIST_QUERY = "list-type=2&max-keys=1000&delimiter=/"
 DATA_DIR = Path("/data")
 CHUNK_SIZE = 1024 * 1024
-LOG_DIR = DATA_DIR / "logs"
+LOG_DIR = Path("/logs")
 S3_NS = {"s3": "http://s3.amazonaws.com/doc/2006-03-01/"}
+TIMEOUT = 60 * 10
 
 
 def parse_listing(xml_text: str) -> Tuple[list[str], str | None]:
@@ -81,13 +82,16 @@ def download_file(filename: str) -> None:
     destination = DATA_DIR / f"{year}_{month}" / filename
     destination.parent.mkdir(parents=True, exist_ok=True)
     url = f"{BUCKET_URL}/{RESOURCE_PREFIX}{filename}"
-    with requests.get(url, timeout=(15, 600), stream=True) as response:
-        response.raise_for_status()
-        with destination.open("wb") as handle:
-            for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
-                if chunk:
-                    handle.write(chunk)
-
+    try:
+        with requests.get(url, timeout=(15, TIMEOUT), stream=True) as response:
+            response.raise_for_status()
+            with destination.open("wb") as handle:
+                for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
+                    if chunk:
+                        handle.write(chunk)
+    except Exception as e:
+        LOGGER.error(f"Error downloading file {filename}: {e}\nRemoved partially downloaded file.")
+        destination.unlink(missing_ok=True)
 
 def sync_once() -> list[str]:
     """Perform one synchronization pass and return the downloaded filenames."""
